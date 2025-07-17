@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  spring-app:
+    container_name: spring-app
+    image: llodia221/spring-app:latest  # Utiliser l'image pushée sur Docker Hub
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql-db
+    environment:
+      # Variables d'environnement pour Spring Boot
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql-db:3306/Gestion_Stock?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME:-root}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=${DDL_AUTO:-update}
+      - SPRING_JPA_SHOW_SQL=${SHOW_SQL:-false}
+      - SERVER_PORT=8080
+      - LOGGING_LEVEL=${LOGGING_LEVEL:-WARN}
+      - APP_UPLOAD_PATH=/app/uploads
+      - APP_DATA_PATH=/app/data
+      # Profil Spring actif
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+    volumes:
+      - app_uploads:/app/uploads
+      - app_data:/app/data
+    networks:
+      - gestion-stock-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    ports:
+      - "${MYSQL_EXTERNAL_PORT:-3307}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-Gestion_Stock}
+      MYSQL_USER: ${DB_USERNAME:-appuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-apppassword}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d  # Pour les scripts d'initialisation
+    networks:
+      - gestion-stock-network
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p${DB_ROOT_PASSWORD:-root}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PHPMyAdmin (optionnel, à désactiver en production)
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin
+    ports: 
+      - "${PHPMYADMIN_PORT:-8081}:80"
+    environment:
+      PMA_HOST: mysql-db
+      PMA_PORT: 3306
+      PMA_USER: ${DB_USERNAME:-root}
+      PMA_PASSWORD: ${DB_PASSWORD:-root}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    depends_on:
+      - mysql-db
+    networks:
+      - gestion-stock-network
+    restart: unless-stopped
+    profiles:
+      - debug  # Utiliser avec --profile debug pour l'activer
+
+  # Watchtower pour l'auto-mise à jour
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=${WATCHTOWER_CLEANUP:-true}
+      - WATCHTOWER_ROLLING_RESTART=true
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_INTERVAL:-300}  # 5 minutes par défaut
+      - TZ=Africa/Dakar
+      - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-}
+    command: --interval ${WATCHTOWER_INTERVAL:-300} --label-enable --cleanup
+    restart: unless-stopped
+    profiles:
+      - production  # Utiliser avec --profile production pour l'activer
+
+  # Nginx reverse proxy (optionnel)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro  # Pour les certificats SSL
+    depends_on:
+      - spring-app
+    networks:
+      - gestion-stock-network
+    restart: unless-stopped
+    profiles:
+      - nginx  # Utiliser avec --profile nginx pour l'activer
+
+volumes:
+  mysql_data:
+    driver: local
+  app_uploads:
+    driver: local
+  app_data:
+    driver: local
+
+networks:
+  gestion-stock-network:
+    driver: bridge
