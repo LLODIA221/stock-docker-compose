@@ -108,6 +108,7 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro  # Pour les certificats SSL
     depends_on:
       - spring-app
+      - phpmyadmin
     networks:
       - gestion-stock-network
     restart: unless-stopped
