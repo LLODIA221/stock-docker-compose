@@ -6,8 +6,9 @@ services:
     image: llodia221/spring-app:latest  # Utiliser l'image pushée sur Docker Hub
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-    ports:
-      - "8080:8080"
+       # Suppression du mapping de port direct pour ne plus exposer 8080 sur l'hôte
+    # ports:
+    #   - "8080:8080"
     depends_on:
       - mysql-db
     environment:
